@@ -71,21 +71,21 @@ class HandeyeSampler(object):
                     self.handeye_parameters.robot_base_frame,
                     self.handeye_parameters.robot_effector_frame,
                     time,
-                    Duration(seconds=2)
+                    Duration(2)
                 )
             else:
                 rob = self.tfBuffer.lookup_transform(
                     self.handeye_parameters.robot_effector_frame,
                     self.handeye_parameters.robot_base_frame,
                     time,
-                    Duration(seconds=2)
+                    Duration(2)
                 )
 
             opt = self.tfBuffer.lookup_transform(
                 self.handeye_parameters.tracking_base_frame,
                 self.handeye_parameters.tracking_marker_frame,
                 time,
-                Duration(seconds=2)
+                Duration(2)
             )
 
             return {'robot': rob, 'optical': opt}
