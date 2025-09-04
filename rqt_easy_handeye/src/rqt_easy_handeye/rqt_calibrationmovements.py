@@ -4,227 +4,231 @@ from qt_gui.plugin import Plugin
 from python_qt_binding.QtCore import QCoreApplication, Qt
 from easy_handeye.handeye_client import HandeyeClient
 try:
-    from python_qt_binding.QtGui import QWidget, QApplication, QVBoxLayout, QHBoxLayout, QProgressBar, QLabel, QPushButton
+    from python_qt_binding.QtGui import QWidget, QApplication, QVBoxLayout, QHBoxLayout, QProgressBar, QLabel, \
+        QPushButton
 except ImportError:
-    from python_qt_binding.QtWidgets import QWidget, QApplication, QVBoxLayout, QHBoxLayout, QProgressBar, QLabel, QPushButton
+    from python_qt_binding.QtWidgets import QWidget, QApplication, QVBoxLayout, QHBoxLayout, QProgressBar, QLabel, \
+        QPushButton
 import rospy
 import sys
 
 
-class AutoSampleMoveGUI(QWidget):
+class CalibrationMovementsGUI(QWidget):
     NOT_INITED_YET = 0
-    INIT_OK = 1
-    INIT_BAD = 2
-    TRYING_PLAN = 3
-    PLAN_OK_EXECUTING = 4
-    EXEC_OK = 5
-    EXEC_FAIL = 6
-    NO_VALID_PLANS = 7
+    BAD_PLAN = 1
+    GOOD_PLAN = 2
+    MOVED_TO_POSE = 3
+    BAD_STARTING_POSITION = 4
+    GOOD_STARTING_POSITION = 5
+    CHECKING_STARTING_POSITION = 6
+    MOVEMENT_FAILED = 7
 
     def __init__(self):
-        super(AutoSampleMoveGUI, self).__init__()
+        super(CalibrationMovementsGUI, self).__init__()
         self.handeye_client = HandeyeClient()
-        self.current_target_pose = -1  # -1 means "home" per original
+        self.current_target_pose = -1  # -1 is home
         self.target_poses = None
-        self.state = AutoSampleMoveGUI.NOT_INITED_YET
+        self.plan_was_successful = None
+        self.state = CalibrationMovementsGUI.NOT_INITED_YET
 
-        # UI
         self.layout = QVBoxLayout()
-        self.top_layout = QHBoxLayout()
-        self.btns_layout = QHBoxLayout()
+        self.labels_layout = QHBoxLayout()
+        self.buttons_layout = QHBoxLayout()
 
         self.progress_bar = QProgressBar()
         self.pose_number_lbl = QLabel('0/0')
-        self.status_lbl = QLabel('Welcome')
-        self.status_lbl.setAlignment(Qt.AlignCenter)
-        self.status_lbl.setWordWrap(True)
+        self.bad_plan_lbl = QLabel('No plan yet')
+        self.bad_plan_lbl.setAlignment(Qt.AlignCenter)
+        self.guide_lbl = QLabel('Hello')
+        self.guide_lbl.setWordWrap(True)
 
-        self.init_btn = QPushButton('Initialize')
-        self.init_btn.clicked.connect(self.handle_init)
+        self.check_start_pose_btn = QPushButton('Check starting pose')
+        self.check_start_pose_btn.clicked.connect(self.handle_check_current_state)
 
-        self.sample_btn = QPushButton('Sample movement')
-        self.sample_btn.clicked.connect(self.handle_sample_and_execute)
-        self.sample_btn.setEnabled(False)
+        self.next_pose_btn = QPushButton('Next Pose')
+        self.next_pose_btn.clicked.connect(self.handle_next_pose)
 
-        self.skip_btn = QPushButton('Skip')
-        self.skip_btn.clicked.connect(self.handle_skip)
-        self.skip_btn.setEnabled(False)
+        self.plan_btn = QPushButton('Plan')
+        self.plan_btn.clicked.connect(self.handle_plan)
 
-        self.top_layout.addWidget(self.pose_number_lbl)
-        self.btns_layout.addWidget(self.init_btn)
-        self.btns_layout.addWidget(self.sample_btn)
-        self.btns_layout.addWidget(self.skip_btn)
+        self.execute_btn = QPushButton('Execute')
+        self.execute_btn.clicked.connect(self.handle_execute)
+
+        self.labels_layout.addWidget(self.pose_number_lbl)
+        self.labels_layout.addWidget(self.bad_plan_lbl)
+
+        self.buttons_layout.addWidget(self.check_start_pose_btn)
+        self.buttons_layout.addWidget(self.next_pose_btn)
+        self.buttons_layout.addWidget(self.plan_btn)
+        self.buttons_layout.addWidget(self.execute_btn)
 
         self.layout.addWidget(self.progress_bar)
-        self.layout.addLayout(self.top_layout)
-        self.layout.addWidget(self.status_lbl)
-        self.layout.addLayout(self.btns_layout)
+        self.layout.addLayout(self.labels_layout)
+        self.layout.addWidget(self.guide_lbl)
+        self.layout.addLayout(self.buttons_layout)
 
         self.setLayout(self.layout)
-        self.setWindowTitle('Auto Sample & Move')
-        self.update_ui()
+
+        self.plan_btn.setEnabled(False)
+        self.execute_btn.setEnabled(False)
+
+        self.setWindowTitle('Local Mover')
         self.show()
 
-    # ---------- UI helpers ----------
-    def update_progress(self):
-        count = len(self.target_poses) if self.target_poses else 1
-        self.progress_bar.setMaximum(count)
-        # show +1 because current_target_pose is index; if -1 (home), show 0
-        shown_idx = max(self.current_target_pose, -1) + 1
-        self.progress_bar.setValue(min(shown_idx, count))
-        self.pose_number_lbl.setText('{}/{}'.format(shown_idx, count))
+    def update_ui(self):
+        if self.target_poses:
+            count_target_poses = len(self.target_poses)
+        else:
+            count_target_poses = 1
+        self.progress_bar.setMaximum(count_target_poses)
+        self.progress_bar.setValue(self.current_target_pose + 1)
+        self.pose_number_lbl.setText('{}/{}'.format(self.current_target_pose + 1, count_target_poses))
 
-    def set_status(self, text):
-        self.status_lbl.setText(text)
+        if self.state == CalibrationMovementsGUI.BAD_PLAN:
+            self.bad_plan_lbl.setText('BAD plan!! Don\'t do it!!!!')
+            self.bad_plan_lbl.setStyleSheet('QLabel { background-color : red}')
+        elif self.state == CalibrationMovementsGUI.GOOD_PLAN:
+            self.bad_plan_lbl.setText('Good plan')
+            self.bad_plan_lbl.setStyleSheet('QLabel { background-color : green}')
+        else:
+            self.bad_plan_lbl.setText('No plan yet')
+            self.bad_plan_lbl.setStyleSheet('')
+
+        if self.state == CalibrationMovementsGUI.NOT_INITED_YET:
+            self.guide_lbl.setText(
+                'Bring the robot to a plausible position and check if it is a suitable starting pose')
+        elif self.state == CalibrationMovementsGUI.CHECKING_STARTING_POSITION:
+            self.guide_lbl.setText(
+                'Checking if the robot can translate and rotate in all directions from the current pose')
+        elif self.state == CalibrationMovementsGUI.BAD_STARTING_POSITION:
+            self.guide_lbl.setText('Cannot calibrate from current position')
+        elif self.state == CalibrationMovementsGUI.GOOD_STARTING_POSITION:
+            self.guide_lbl.setText('Ready to start: click on next pose')
+        elif self.state == CalibrationMovementsGUI.GOOD_PLAN:
+            self.guide_lbl.setText('The plan seems good: press execute to move the robot')
+        elif self.state == CalibrationMovementsGUI.BAD_PLAN:
+            self.guide_lbl.setText('Planning failed: try again')
+        elif self.state == CalibrationMovementsGUI.MOVED_TO_POSE:
+            self.guide_lbl.setText('Pose reached: take a sample and go on to next pose')
+
+        can_plan = self.state == CalibrationMovementsGUI.GOOD_STARTING_POSITION
+        self.plan_btn.setEnabled(can_plan)
+        can_move = self.state == CalibrationMovementsGUI.GOOD_PLAN
+        self.execute_btn.setEnabled(can_move)
         QCoreApplication.processEvents()
 
-    def update_ui(self):
-        self.update_progress()
-        # Buttons availability
-        self.init_btn.setEnabled(self.state in (self.NOT_INITED_YET, self.INIT_BAD))
-        can_sample = self.state in (self.INIT_OK, self.EXEC_OK, self.EXEC_FAIL)
-        self.sample_btn.setEnabled(can_sample)
-        self.skip_btn.setEnabled(can_sample)
-
-        # Status text
-        if self.state == self.NOT_INITED_YET:
-            self.set_status('Click "Initialize" to detect poses from the current robot position.')
-        elif self.state == self.INIT_OK:
-            self.set_status('Initialized. Click "Sample movement" to plan and (if possible) move automatically.')
-        elif self.state == self.INIT_BAD:
-            self.set_status('Cannot calibrate from current position. Reposition the robot and click "Initialize" again.')
-        elif self.state == self.TRYING_PLAN:
-            self.set_status('Planning to next pose…')
-        elif self.state == self.PLAN_OK_EXECUTING:
-            self.set_status('Plan looks good. Executing…')
-        elif self.state == self.EXEC_OK:
-            self.set_status('Pose reached. You can sample data and then continue.')
-        elif self.state == self.EXEC_FAIL:
-            self.set_status('Execution failed. Try "Sample movement" again or "Skip".')
-        elif self.state == self.NO_VALID_PLANS:
-            self.set_status('No valid plans for any remaining poses.')
-
-    # ---------- Behavior ----------
-    def handle_init(self):
-        self.state = self.TRYING_PLAN  # temporary to show activity
+    def handle_check_current_state(self):
+        self.state = CalibrationMovementsGUI.CHECKING_STARTING_POSITION
         self.update_ui()
         res = self.handeye_client.check_starting_pose()
         if res.can_calibrate:
-            self.state = self.INIT_OK
+            self.state = CalibrationMovementsGUI.GOOD_STARTING_POSITION
         else:
-            self.state = self.INIT_BAD
+            self.state = CalibrationMovementsGUI.BAD_STARTING_POSITION
         self.current_target_pose = res.target_poses.current_target_pose_index
         self.target_poses = res.target_poses.target_poses
+        self.plan_was_successful = None
+
         self.update_ui()
 
-    def handle_skip(self):
-        if self.target_poses is None:
-            return
-        next_idx = self.current_target_pose + 1
-        res = self.handeye_client.select_target_pose(next_idx)
+    def handle_next_pose(self):
+        res = self.handeye_client.select_target_pose(self.current_target_pose+1)
         self.current_target_pose = res.target_poses.current_target_pose_index
         self.target_poses = res.target_poses.target_poses
-        # stay in INIT_OK-like state so user can try again
-        if self.state not in (self.INIT_OK, self.EXEC_OK, self.EXEC_FAIL):
-            self.state = self.INIT_OK
+        self.plan_was_successful = None
+
+        self.state = CalibrationMovementsGUI.GOOD_STARTING_POSITION
         self.update_ui()
 
-    def handle_sample_and_execute(self):
-        """
-        Single action: choose current (or next) target pose, try plan; if plan fails,
-        automatically advance through remaining poses until one plans; then execute automatically.
-        """
-        if self.state not in (self.INIT_OK, self.EXEC_OK, self.EXEC_FAIL):
-            # Ensure we have a pose list
-            self.handle_init()
-            if self.state != self.INIT_OK:
-                return
+        # --- Minimal change: automatically try to plan (and then execute if possible)
+        self.handle_plan()
 
-        if not self.target_poses:
-            self.state = self.NO_VALID_PLANS
-            self.update_ui()
-            return
+    def handle_plan(self):
+        self.guide_lbl.setText('Planning to the next position. Click on execute when a good one was found')
+        res = self.handeye_client.plan_to_selected_target_pose()
+        self.plan_was_successful = res.success
+        if self.plan_was_successful:
+            self.state = CalibrationMovementsGUI.GOOD_PLAN
+        else:
+            self.state = CalibrationMovementsGUI.BAD_PLAN
+        self.update_ui()
 
-        total = len(self.target_poses)
-        attempts = 0
-        planned = False
+        # --- Minimal change: if plan succeeded, execute immediately
+        if self.plan_was_successful:
+            self.handle_execute()
 
-        while attempts < total:
-            self.state = self.TRYING_PLAN
-            self.update_ui()
-
-            # Always make sure current index is selected on the backend
-            sel = self.handeye_client.select_target_pose(self.current_target_pose)
-            self.current_target_pose = sel.target_poses.current_target_pose_index
-            self.target_poses = sel.target_poses.target_poses
-            self.update_progress()
-
-            plan_res = self.handeye_client.plan_to_selected_target_pose()
-            if plan_res.success:
-                planned = True
-                break
+    def handle_execute(self):
+        if self.plan_was_successful:
+            self.guide_lbl.setText('Going to the selected pose')
+            res = self.handeye_client.execute_plan()
+            if res.success:
+                self.state = CalibrationMovementsGUI.MOVED_TO_POSE
             else:
-                # Advance to the next pose and try again
-                next_idx = self.current_target_pose + 1
-                sel = self.handeye_client.select_target_pose(next_idx)
-                self.current_target_pose = sel.target_poses.current_target_pose_index
-                self.target_poses = sel.target_poses.target_poses
-                attempts += 1
-
-        if not planned:
-            self.state = self.NO_VALID_PLANS
+                self.state = CalibrationMovementsGUI.MOVEMENT_FAILED
             self.update_ui()
-            return
-
-        # Execute automatically
-        self.state = self.PLAN_OK_EXECUTING
-        self.update_ui()
-        exec_res = self.handeye_client.execute_plan()
-        if exec_res.success:
-            self.state = self.EXEC_OK
-        else:
-            self.state = self.EXEC_FAIL
-        self.update_ui()
 
 
-class RqtAutoSampleMove(Plugin):
+class RqtCalibrationMovements(Plugin):
     def __init__(self, context):
-        super(RqtAutoSampleMove, self).__init__(context)
-        self.setObjectName('AutoSampleMove')
+        super(RqtCalibrationMovements, self).__init__(context)
+        # Give QObjects reasonable names
+        self.setObjectName('LocalMover')
 
         rospy.sleep(1.0)
 
+        # Process standalone plugin command-line arguments
         from argparse import ArgumentParser
         parser = ArgumentParser()
-        parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="Put plugin in silent mode")
+        # Add argument(s) to the parser.
+        parser.add_argument("-q", "--quiet", action="store_true",
+                            dest="quiet",
+                            help="Put plugin in silent mode")
         args, unknowns = parser.parse_known_args(context.argv())
         if not args.quiet:
             print('arguments: ', args)
             print('unknowns: ', unknowns)
 
-        self._widget = AutoSampleMoveGUI()
+        # Create QWidget
+        self._widget = CalibrationMovementsGUI()
         if context.serial_number() > 1:
             self._widget.setWindowTitle(self._widget.windowTitle() + (' (%d)' % context.serial_number()))
+        # Add widget to the user interface
         context.add_widget(self._widget)
 
     def shutdown_plugin(self):
+        # TODO unregister all publishers here
         pass
 
     def save_settings(self, plugin_settings, instance_settings):
+        # TODO save intrinsic configuration, usually using:
+        # instance_settings.set_value(k, v)
         pass
 
     def restore_settings(self, plugin_settings, instance_settings):
+        # TODO restore intrinsic configuration, usually using:
+        # v = instance_settings.value(k)
         pass
+
+    # def trigger_configuration(self):
+    # Comment in to signal that the plugin has a way to configure
+    # This will enable a setting button (gear icon) in each dock widget title bar
+    # Usually used to open a modal configuration dialog
 
 
 if __name__ == '__main__':
-    NODE_NAME = 'easy_handeye_auto_mover'
+
+    NODE_NAME = 'easy_handeye_mover'
 
     rospy.init_node(NODE_NAME)
     while rospy.get_time() == 0.0:
         pass
 
     qapp = QApplication(sys.argv)
-    gui = AutoSampleMoveGUI()
-    gui.show()
+    lmg = CalibrationMovementsGUI()
+    lmg.show()
     sys.exit(qapp.exec_())
+
+    # TODO: alternative workflow for automatic calibration:
+    # generate poses around current pose, each rotating by angle_delta in each direction
+    # generate a plan to each pose and back
+    # if all movements are possible, perform them in a row (at low speed)
