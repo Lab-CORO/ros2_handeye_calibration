@@ -124,54 +124,50 @@ class CalibrationMovements:
         return True
 
     @staticmethod
-    def _compute_poses_around_state(start_pose, angle_delta, translation_delta):
-        basis = np.eye(3)
+    def _compute_poses_around_state(start_pose, angle_delta, translation_delta, n=100):
+        """
+        Randomly sample n poses around start_pose.
 
-        pos_deltas = [quaternion_from_euler(*rot_axis * angle_delta) for rot_axis in basis]
-        neg_deltas = [quaternion_from_euler(*rot_axis * (-angle_delta)) for rot_axis in basis]
+        angle_delta: float or (3,) iterable -> max abs [roll, pitch, yaw] in radians
+        translation_delta: float or (3,) iterable -> max abs [dx, dy, dz]
+        n: number of poses to return
+        """
+        # Allow scalar or per-axis bounds
+        def _to_vec3(x):
+            arr = np.asarray(x, dtype=float)
+            if arr.ndim == 0:
+                return np.array([arr, arr, arr], dtype=float)
+            if arr.size != 3:
+                raise ValueError("Expected scalar or 3-element iterable for bounds")
+            return arr.reshape(3)
 
-        quaternion_deltas = list(chain.from_iterable(zip(pos_deltas, neg_deltas)))  # interleave
-
-        final_rots = []
-        for qd in quaternion_deltas:
-            final_rots.append(list(qd))
-
-        # TODO: accept a list of delta values
-
-        pos_deltas = [quaternion_from_euler(*rot_axis * angle_delta / 2) for rot_axis in basis]
-        neg_deltas = [quaternion_from_euler(*rot_axis * (-angle_delta / 2)) for rot_axis in basis]
-
-        quaternion_deltas = list(chain.from_iterable(zip(pos_deltas, neg_deltas)))  # interleave
-        for qd in quaternion_deltas:
-            final_rots.append(list(qd))
+        a_bounds = _to_vec3(angle_delta)         # [roll_max, pitch_max, yaw_max]
+        t_bounds = _to_vec3(translation_delta)   # [dx_max, dy_max, dz_max]
 
         final_poses = []
-        for rot in final_rots:
+        for _ in range(int(n)):
+            # Sample translations uniformly in the box [-t_bounds, +t_bounds]
+            dx, dy, dz = np.random.uniform(-t_bounds, t_bounds)
+
+            # Sample Euler deltas uniformly in [-a_bounds, +a_bounds]
+            droll, dpitch, dyaw = np.random.uniform(-a_bounds, a_bounds)
+            q_delta = quaternion_from_euler(droll, dpitch, dyaw)
+
+            # Build pose
             fp = deepcopy(start_pose)
+
+            # Position
+            fp.pose.position.x += dx
+            fp.pose.position.y += dy
+            fp.pose.position.z += dz
+
+            # Orientation (compose start * delta)
             ori = fp.pose.orientation
-            combined_rot = quaternion_multiply([ori.x, ori.y, ori.z, ori.w], rot)
-            fp.pose.orientation = Quaternion(*combined_rot)
+            q_start = [ori.x, ori.y, ori.z, ori.w]
+            q_combined = quaternion_multiply(q_start, q_delta)
+            fp.pose.orientation = Quaternion(*q_combined)
+
             final_poses.append(fp)
-
-        fp = deepcopy(start_pose)
-        fp.pose.position.x += translation_delta / 2
-        final_poses.append(fp)
-
-        fp = deepcopy(start_pose)
-        fp.pose.position.x -= translation_delta / 2
-        final_poses.append(fp)
-
-        fp = deepcopy(start_pose)
-        fp.pose.position.y += translation_delta
-        final_poses.append(fp)
-
-        fp = deepcopy(start_pose)
-        fp.pose.position.y -= translation_delta
-        final_poses.append(fp)
-
-        fp = deepcopy(start_pose)
-        fp.pose.position.z += translation_delta / 3
-        final_poses.append(fp)
 
         return final_poses
 
