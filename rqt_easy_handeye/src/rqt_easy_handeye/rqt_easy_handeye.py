@@ -131,8 +131,10 @@ class RqtHandeyeCalibration(Plugin):
     def handle_take_sample(self):
         sample_list = self.client.take_sample()
         self._display_sample_list(sample_list)
-        self._widget.computeButton.setEnabled(len(sample_list.hand_world_samples) > 1)
+        self._widget.computeButton.setEnabled(len(sample_list.hand_world_samples) > 2)
         self._widget.saveButton.setEnabled(False)
+        if len(sample_list.hand_world_samples) > 2:
+            self.handle_compute_calibration()
 
     def handle_remove_sample(self):
         index = self._widget.sampleListWidget.currentRow()
@@ -142,14 +144,17 @@ class RqtHandeyeCalibration(Plugin):
         self._widget.saveButton.setEnabled(False)
 
     def handle_compute_calibration(self):
-        result = self.client.compute_calibration()
-        self._widget.computeButton.setEnabled(False)
-        if result.valid:
-            self._widget.outputBox.setPlainText(str(result.calibration.transform.transform))
-            self._widget.saveButton.setEnabled(True)
-        else:
+        try:
+            result = self.client.compute_calibration()
+            self._widget.computeButton.setEnabled(False)
+            if result.valid:
+                self._widget.outputBox.setPlainText(str(result.calibration.transform.transform))
+                self._widget.saveButton.setEnabled(True)
+            else:
+                self._widget.outputBox.setPlainText('The calibration could not be computed')
+                self._widget.saveButton.setEnabled(False)
+        except Exception as e:
             self._widget.outputBox.setPlainText('The calibration could not be computed')
-            self._widget.saveButton.setEnabled(False)
 
     def handle_save_calibration(self):
         self.client.save()
