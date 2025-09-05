@@ -110,6 +110,8 @@ class CalibrationMovements:
     def _check_target_poses(self, joint_limits):
         if len(self.fallback_joint_limits) == 6:
             joint_limits = joint_limits[1:]
+
+        feasible_poses = list()
         for fp in self.target_poses:
             self.mgc.set_pose_target(fp)
             ret = self.mgc.plan()
@@ -120,7 +122,10 @@ class CalibrationMovements:
                 # melodic
                 plan = ret
             if len(plan.joint_trajectory.points) == 0 or CalibrationMovements._is_crazy_plan(plan, joint_limits):
-                return False
+                pass
+            else:
+                feasible_poses.append(fp)
+        self.target_poses = feasible_poses
         return True
 
     @staticmethod
@@ -168,7 +173,6 @@ class CalibrationMovements:
             fp.pose.orientation = Quaternion(*q_combined)
 
             final_poses.append(fp)
-
         return final_poses
 
     @staticmethod
