@@ -20,9 +20,9 @@ This node assumes that the TF between the `robot_base_frame` and the `robot_effe
 
 **Taking samples**
 ```bash
-ros2 service call /hand_eye_calibration/capture_point std_srvs/srv/Trigger {}
+ros2 service call /hand_eye_calibration/capture_point ros2_markertracker_interfaces/srv/CapturePoint {}
 ```
-For each `Trigger` service call, the ROS node will query the TF tree. When the number of samples is more then three, the node returns the current calibration estimate at every service call. All information is also printed to screen by the node. 
+For each `CapturePoint` service call, the ROS node will query the TF tree. When the number of samples is more then three, the node returns the current calibration estimate at every service call. All information is also printed to screen by the node. 
 
 **Note**: Ideally, you should collect at least 15 samples, and check for convergence of the calibration estimate.    
 **Note**: Please encure the robot is still when triggering each capture.
