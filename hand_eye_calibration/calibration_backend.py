@@ -65,6 +65,6 @@ class CalibrationBackend:
         hand_camera_rot, hand_camera_tr = cv2.calibrateHandEye(hand_world_rot, hand_world_tr, marker_camera_rot,
                                                                marker_camera_tr, method=method)
 
-        (hcqw, hcqx, hcqy, hcqz) = [float(i) for i in Rot.from_matrix(hand_camera_rot).as_quat()]
+        (hcqx, hcqy, hcqz, hcqw) = [float(i) for i in Rot.from_matrix(hand_camera_rot).as_quat()]
         (hctx, hcty, hctz) = [float(i) for i in hand_camera_tr]
         return [hctx, hcty, hctz, hcqx, hcqy, hcqz, hcqw]

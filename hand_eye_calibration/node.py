@@ -111,6 +111,7 @@ class DataCollector(Node):
         except TransformException as ex:
             self.get_logger().error("Could not get transforms")
             self.get_logger().error(str(ex))
+            return
 
         self.get_logger().info("robot: " + tf_to_string(robot))
         self.get_logger().info("tracking: " + tf_to_string(tracking))
