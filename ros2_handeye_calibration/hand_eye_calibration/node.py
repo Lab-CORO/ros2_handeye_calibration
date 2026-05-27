@@ -9,8 +9,8 @@ from rclpy.node import Node
 from rclpy.time import Duration
 from geometry_msgs.msg import TransformStamped, Transform
 from scipy.spatial.transform import Rotation as Rot
-#from std_srvs.srv import Trigger
-from ros2_markertracker_interfaces.srv import CapturePoint
+from std_srvs.srv import Trigger
+from ros2_handeye_calibration_interfaces.srv import CapturePoint
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
@@ -81,6 +81,11 @@ class DataCollector(Node):
             self.capture_point_service_name,
             self.capture_point_service_callback)
 
+        self.reset_samples_service = self.create_service(
+            Trigger,
+            mname + "/reset_samples",
+            self.reset_samples_service_callback)
+
         # Transform listener.
         self.tf_buffer = Buffer()
         self._listener = TransformListener(self.tf_buffer, self)
@@ -88,9 +93,19 @@ class DataCollector(Node):
         self.robot_samples = list()
         self.tracking_samples = list()
 
+    def reset_samples_service_callback(self, req, resp):
+        n = len(self.robot_samples)
+        self.robot_samples.clear()
+        self.tracking_samples.clear()
+        resp.success = True
+        resp.message = f"Cleared {n} samples."
+        self.get_logger().info(f"[reset] {resp.message}")
+        return resp
+
     def capture_point_service_callback(self, req: CapturePoint.Request, resp: CapturePoint.Response):
-        # get transforms 
-        time = self.get_clock().now() - Duration(seconds=1)
+        # get transforms — Time() means "latest available", avoiding stale-TF errors
+        from rclpy.time import Time
+        time = Time()
 
         try:
             # here we trick the library (it is actually made for eye_in_hand only). Trust me, I'm an engineer
@@ -112,7 +127,9 @@ class DataCollector(Node):
         except TransformException as ex:
             self.get_logger().error("Could not get transforms")
             self.get_logger().error(str(ex))
-            return
+            resp.success = False
+            resp.message = str(ex)
+            return resp
 
         self.get_logger().info("robot: " + tf_to_string(robot))
         self.get_logger().info("tracking: " + tf_to_string(tracking))
