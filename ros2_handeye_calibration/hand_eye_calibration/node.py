@@ -10,7 +10,7 @@ from rclpy.time import Duration
 from geometry_msgs.msg import TransformStamped, Transform
 from scipy.spatial.transform import Rotation as Rot
 from std_srvs.srv import Trigger
-from ros2_handeye_calibration_interfaces.srv import CapturePoint
+from ros2_handeye_calibration_interface.srv import CapturePoint
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
